@@ -4,20 +4,16 @@ import pandas as pd
 
 st.set_page_config(page_title="Sistema de Uniformes", layout="wide")
 
-st.title("👕 Carga de Talles - Gestión de Uniformes")
+# URL de tu planilla (la misma que pusiste en Secrets)
+url = "https://docs.google.com/spreadsheets/d/1nzDspEMKJZJSa5thUozUBQh0J4TMBjJV83fA0Xw8fpE/edit"
 
-# --- CONEXIÓN MODIFICADA ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Quitamos el parámetro 'worksheet' de aquí para probar la conexión base primero
-    full_df = conn.read(ttl=0) 
-    
-    # Intentamos filtrar la pestaña CASTILLO manualmente
-    df = conn.read(worksheet="CASTILLO", ttl=0)
+    # Forzamos la lectura usando la URL directamente en lugar de solo el nombre de la conexión
+    df = conn.read(spreadsheet=url, worksheet="CASTILLO", ttl=0)
     
     df.columns = df.columns.str.strip()
     st.sidebar.success("✅ Conexión establecida")
-    
 except Exception as e:
     st.error("❌ Error de comunicación con Google Sheets")
     st.info(f"Detalle: {e}")
