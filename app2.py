@@ -1,74 +1,81 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 st.set_page_config(page_title="Sistema de Uniformes", layout="wide")
 
 st.title("👕 Carga de Talles - Gestión de Uniformes")
 
-# --- CONFIGURACIÓN DE LA PLANILLA ---
-# Este es el ID de tu planilla extraído de tu link
-SHEET_ID = "1nzDspEMKJZJSa5thUozUBQh0J4TMBjJV83fA0Xw8fpE"
-SHEET_NAME = "CASTILLO"
-# Esta URL fuerza a Google a entregar los datos sin errores de cabecera
-url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
-
-@st.cache_data(ttl=0)
-def load_data(url):
-    try:
-        # Leemos directamente desde la URL de exportación de Google
-        return pd.read_csv(url)
-    except Exception as e:
-        st.error(f"❌ Error al conectar: {e}")
-        return None
-
-df = load_data(url)
-
-if df is not None:
-    # Limpiar espacios en los nombres de las columnas
-    df.columns = df.columns.str.strip()
+# --- CONEXIÓN ---
+try:
+    # Usamos la conexión oficial pero con manejo de errores manual
+    conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # --- LOGIN Y FILTRO ---
-    st.sidebar.header("Acceso Gerentes")
-    sucursales = sorted(df["SUCURSAL"].unique())
-    sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
-    password = st.sidebar.text_input("Contraseña", type="password")
+    # Intentamos leer la planilla. Si no ponemos 'worksheet', lee la primera.
+    df = conn.read(ttl=0)
+    
+    # Limpiamos los nombres de las columnas (sacamos espacios locos)
+    df.columns = [str(c).strip() for c in df.columns]
+    
+except Exception as e:
+    st.error("❌ Google Sheets rechazó la conexión.")
+    st.info(f"Detalle del error: {e}")
+    st.warning("REVISÁ ESTO: ¿El archivo está compartido como 'Cualquier persona con el enlace' y 'Editor'?")
+    st.stop()
 
-    # Claves (Podés agregar todas las que necesites aquí)
-    claves = {
-        "AGUILARES": "aguilares2026",
-        "PERICO": "perico2026",
-        "PLAZOLETA": "plazoleta2026"
-    }
+# --- VERIFICACIÓN DE COLUMNA ---
+if "SUCURSAL" not in df.columns:
+    st.error(f"❌ No encontré la columna 'SUCURSAL'. Columnas detectadas: {list(df.columns)}")
+    st.stop()
 
-    if password == claves.get(sucursal_sel):
-        st.success(f"Conectado a {sucursal_sel}")
-        
-        mask = df["SUCURSAL"] == sucursal_sel
-        df_sucursal = df[mask].copy()
+# --- LOGIN Y FILTRO ---
+sucursales = sorted(df["SUCURSAL"].dropna().unique())
+sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
+password = st.sidebar.text_input("Contraseña", type="password")
 
-        # Configuración de talles
-        talles_num = [str(i) for i in range(36, 64, 2)]
-        talles_letras = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
-        talles_camisas = [str(i) for i in range(38, 62, 2)]
+# Diccionario de claves
+claves = {
+    "AGUILARES": "aguilares2026",
+    "PERICO": "perico2026",
+    "PLAZOLETA": "plazoleta2026"
+}
 
-        # Editor de datos
-        edited_df = st.data_editor(
-            df_sucursal,
-            column_config={
-                "PANTALON GRAFA": st.column_config.SelectboxColumn("Pantalón", options=talles_num),
-                "CHOMBA MANGAS LARGAS": st.column_config.SelectboxColumn("Chomba", options=talles_letras),
-                "CAMPERA HOMBRE": st.column_config.SelectboxColumn("Camp. Hombre", options=talles_letras),
-                "CAMISA HOMBRE": st.column_config.SelectboxColumn("Camisa Hombre", options=talles_camisas),
-                "CAMPERA MUJER": st.column_config.SelectboxColumn("Camp. Mujer", options=talles_letras),
-                "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=talles_camisas),
-            },
-            disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "Ingreso", "CUIL", "APELLIDO Y NOMBRE", "VALIDACION"],
-            hide_index=True,
-        )
+if password == claves.get(sucursal_sel):
+    st.success(f"Conectado a {sucursal_sel}")
+    
+    mask = df["SUCURSAL"] == sucursal_sel
+    df_sucursal = df[mask].copy()
 
-        st.warning("⚠️ Nota: Por seguridad técnica, para guardar los cambios en esta versión, hacé clic en el botón y avisame si ves el archivo Maestro.")
-        
-        if st.button("💾 GUARDAR CAMBIOS"):
+    # Configuración de talles
+    t_num = [str(i) for i in range(36, 64, 2)]
+    t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
+    t_cam = [str(i) for i in range(38, 62, 2)]
+
+    # Editor de tabla
+    edited_df = st.data_editor(
+        df_sucursal,
+        column_config={
+            "PANTALON GRAFA": st.column_config.SelectboxColumn("Pantalón", options=t_num),
+            "CHOMBA MANGAS LARGAS": st.column_config.SelectboxColumn("Chomba", options=t_let),
+            "CAMPERA HOMBRE": st.column_config.SelectboxColumn("Camp. Hombre", options=t_let),
+            "CAMISA HOMBRE": st.column_config.SelectboxColumn("Camisa Hombre", options=t_cam),
+            "CAMPERA MUJER": st.column_config.SelectboxColumn("Camp. Mujer", options=t_let),
+            "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=t_cam),
+        },
+        disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "APELLIDO Y NOMBRE"],
+        hide_index=True,
+    )
+
+    if st.button("💾 GUARDAR CAMBIOS"):
+        try:
+            df.loc[mask, :] = edited_df
+            conn.update(data=df)
+            st.balloons()
+            st.success("¡Guardado correctamente en el Maestro!")
+        except Exception as e:
+            st.error(f"Error al guardar: {e}")
+else:
+    st.info("Por favor, ingrese la contraseña en la barra lateral.")
             st.info("Intentando guardar... si aparece error de credenciales, te daré el paso final para habilitar la escritura.")
             # Aquí iría el conn.update si la conexión base funciona
     else:
