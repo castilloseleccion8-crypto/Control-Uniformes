@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 
-st.title("👕 Carga de Talles - Gestión de Uniformes")
+st.title("Carga de Talles - Gestión de Uniformes")
 
 # --- CONEXIÓN ---
 try:
@@ -102,7 +102,7 @@ if password == pass_correcta:
 
                 conn.update(data=df)
                 st.balloons()
-                st.success("✅ ¡Guardado con éxito! Los datos ya están en tu Google Sheet.")
+                st.success("✅ ¡Guardado con éxito!")
             except Exception as e:
                 st.error(f"❌ Error al guardar: {e}")
 else:
