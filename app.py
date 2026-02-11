@@ -2,63 +2,100 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
+# Configuración de la página
+st.set_page_config(page_title="Sistema de Uniformes", layout="wide")
 
-st.title("👕 Carga de Talles por Sucursal")
+st.title("👕 Carga de Talles - Gestión de Uniformes")
 
-# Conexión con Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- CONEXIÓN ---
+try:
+    # ttl=0 evita que Streamlit guarde datos viejos en memoria
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(worksheet="CASTILLO", ttl=0)
+    
+    # Limpiamos nombres de columnas por si hay espacios extra
+    df.columns = df.columns.str.strip()
+    
+except Exception as e:
+    st.error("❌ No se pudo conectar con la planilla.")
+    st.info(f"Detalle técnico: {e}")
+    st.markdown("""
+    **Revisá lo siguiente:**
+    1. Que en **Secrets** el link termine en `/edit`.
+    2. Que la pestaña del Google Sheet se llame exactamente **CASTILLO**.
+    3. Que el archivo esté compartido como **'Cualquier persona con el enlace'** en modo **'Editor'**.
+    """)
+    st.stop()
 
-# Leer los datos (ajusta el nombre de tu hoja)
-df = conn.read(worksheet="Hoja1")
-
-# 1. Login simple
-sucursales = df["SUCURSAL"].unique()
+# --- LOGIN Y FILTRO ---
+st.sidebar.header("Acceso Gerentes")
+sucursales = sorted(df["SUCURSAL"].unique())
 sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
-password = st.sidebar.text_input("Contraseña de Sucursal", type="password")
 
-# Diccionario simple de claves (puedes ampliarlo)
-claves = {"AGUILARES": "aguilares2026", "PERICO": "perico2026"}
+# Definí acá las contraseñas para cada sucursal (podés agregar más)
+claves = {
+    "PERICO": "perico2026",
+    "PLAZOLETA": "plazoleta2026",
+    "AGUILARES": "aguilares2026"
+}
+
+password = st.sidebar.text_input("Contraseña", type="password")
 
 if password == claves.get(sucursal_sel):
-    st.success(f"Acceso concedido a sucursal: {sucursal_sel}")
+    st.success(f"Conectado a Sucursal: {sucursal_sel}")
     
-    # Filtrar solo los colaboradores de esa sucursal
-    df_filtrado = df[df["SUCURSAL"] == sucursal_sel].copy()
-    
-    # Definir opciones de talles
+    # Filtrar datos de la sucursal
+    mask = df["SUCURSAL"] == sucursal_sel
+    df_sucursal = df[mask].copy()
+
+    # --- DEFINICIÓN DE TALLES ---
     talles_num = [str(i) for i in range(36, 64, 2)] # 36 al 62
     talles_letras = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
-    camisas_num = [str(i) for i in range(38, 62, 2)] # 38 al 60
+    talles_camisas = [str(i) for i in range(38, 62, 2)] # 38 al 60
 
-    st.write("### Complete los talles donde corresponda:")
-    st.info("Solo se permite editar las celdas habilitadas con talles.")
+    st.write("### Planilla de Carga")
+    st.caption("Elegí el talle en las celdas habilitadas. Al terminar, dale al botón de Guardar abajo.")
 
-    # Configurar el editor de tabla
-    # Hacemos que solo las columnas de prendas sean editables con sus talles específicos
+    # --- EDITOR DE DATOS ---
+    # Solo permitimos editar las columnas de uniformes
+    columnas_editables = [
+        "PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", 
+        "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"
+    ]
+
     edited_df = st.data_editor(
-        df_filtrado,
+        df_sucursal,
         column_config={
-            "PANTALON GRAFA": st.column_config.SelectboxColumn("Pantalón", options=talles_num),
-            "CHOMBA MANGAS LARGAS": st.column_config.SelectboxColumn("Chomba", options=talles_letras),
-            "CAMPERA HOMBRE": st.column_config.SelectboxColumn("Camp. Hombre", options=talles_letras),
-            "CAMISA HOMBRE": st.column_config.SelectboxColumn("Camisa Hombre", options=camisas_num),
-            "CAMPERA MUJER": st.column_config.SelectboxColumn("Camp. Mujer", options=talles_letras),
-            "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=camisas_num),
+            "PANTALON GRAFA": st.column_config.SelectboxColumn("Pantalón Grafa", options=talles_num),
+            "CHOMBA MANGAS LARGAS": st.column_config.SelectboxColumn("Chomba M.L.", options=talles_letras),
+            "CAMPERA HOMBRE": st.column_config.SelectboxColumn("Campera Hombre", options=talles_letras),
+            "CAMISA HOMBRE": st.column_config.SelectboxColumn("Camisa Hombre", options=talles_camisas),
+            "CAMPERA MUJER": st.column_config.SelectboxColumn("Campera Mujer", options=talles_letras),
+            "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=talles_camisas),
             "LEGAJO": st.column_config.Column(disabled=True),
-            "APELLIDO Y NOMBRE": st.column_config.Column(disabled=True),
             "SUCURSAL": st.column_config.Column(disabled=True),
+            "APELLIDO Y NOMBRE": st.column_config.Column(disabled=True),
+            "POSICIÓN": st.column_config.Column(disabled=True),
+            "CUIL": st.column_config.Column(disabled=True),
+            "Ingreso": st.column_config.Column(disabled=True),
         },
-        disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "Ingreso", "CUIL", "APELLIDO Y NOMBRE"],
         hide_index=True,
     )
 
-    if st.button("💾 Guardar Cambios en Maestro"):
-        # Aquí actualizamos el DataFrame original con los datos editados
-        df.update(edited_df)
-        conn.update(worksheet="Hoja1", data=df)
-        st.balloons()
-        st.success("¡Datos actualizados correctamente en el archivo maestro!")
+    # --- BOTÓN DE GUARDAR ---
+    if st.button("💾 GUARDAR CAMBIOS EN MAESTRO"):
+        try:
+            # Actualizamos el dataframe original con los cambios realizados
+            df.loc[mask, :] = edited_df
+            conn.update(worksheet="CASTILLO", data=df)
+            st.balloons()
+            st.success("¡Datos guardados exitosamente en el Google Sheet!")
+        except Exception as e:
+            st.error(f"Error al guardar: {e}")
+            st.info("Asegurate de que el permiso en Google Sheets esté como 'Editor'.")
 
 else:
-    st.warning("Por favor, ingrese la sucursal y contraseña correcta.")
+    if password:
+        st.error("Contraseña incorrecta")
+    else:
+        st.info("Ingrese su contraseña en la barra lateral para ver los colaboradores.")
