@@ -29,46 +29,54 @@ if password == pass_correcta:
     mask_sucursal = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask_sucursal].copy()
 
-    # --- LISTAS DE TALLES ---
-    t_num = [str(i) for i in range(36, 64, 2)]
-    t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
-    t_cam = [str(i) for i in range(38, 62, 2)]
+    # --- OPCIONES DE TALLES ---
+    # Ponemos el texto de instrucción como primera opción
+    t_num = ["👉 ELEGIR", "36", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60", "62"]
+    t_let = ["👉 ELEGIR", "S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
+    t_cam = ["👉 ELEGIR", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60"]
 
     prendas = ["PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"]
 
-    # --- PROCESAMIENTO DE DATOS ---
+    # --- LÓGICA DE VISUALIZACIÓN (REFORZADA) ---
     for prenda in prendas:
-        # Limpiamos los datos
+        # Convertimos todo a string y limpiamos espacios
         df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({'nan': '', 'None': '', '0.0': '', '0': ''})
         
-        # Si NO es un pedido (celda vacía), le ponemos el texto fijo
-        df_sucursal.loc[df_sucursal[prenda] == "", prenda] = "🚫 NO APLICA"
-        # Si ES un pedido (valor 1), lo dejamos vacío para que elijan
-        df_sucursal.loc[df_sucursal[prenda] == "1", prenda] = None
+        # Si la celda tiene un "1", "1.0" o está marcada como pedido, ponemos ELEGIR
+        # Si ya tiene un talle (ej: "44"), dejamos el talle
+        def transformar_vista(valor):
+            if valor in ["1", "1.0"]:
+                return "👉 ELEGIR"
+            elif valor == "":
+                return "🚫 NO APLICA"
+            return valor # Si ya tiene un talle, lo mantiene
+
+        df_sucursal[prenda] = df_sucursal[prenda].apply(transformar_vista)
 
     st.write(f"### Planilla de {sucursal_sel}")
-    st.info("💡 Solo podés elegir talles en las celdas que NO dicen '🚫 NO APLICA'.")
+    st.info("💡 Solo debés completar donde dice **'👉 ELEGIR'**. Si dice **'🚫 NO APLICA'**, ese empleado no requiere esa prenda.")
 
-    # --- CONFIGURACIÓN DEL EDITOR ---
+    # --- DATA EDITOR ---
     config_visual = {
         "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True),
     }
 
     for prenda in prendas:
-        # Definir qué lista de talles usar
-        if "PANTALON" in prenda: opts = t_num
-        elif "CAMISA" in prenda: opts = t_cam
-        else: opts = t_let
-        
-        # Agregamos "🚫 NO APLICA" como una opción válida para evitar el TypeError
-        # pero el gerente sabrá que no debe tocarla.
+        # Asignamos las opciones correctas según el tipo de prenda
+        if "PANTALON" in prenda:
+            opts = t_num
+        elif "CAMISA" in prenda:
+            opts = t_cam
+        else:
+            opts = t_let
+            
+        # Agregamos "🚫 NO APLICA" a las opciones por si quieren corregir
         config_visual[prenda] = st.column_config.SelectboxColumn(
-            prenda.replace("PANTALON GRAFA", "PANTALÓN DE GRAFA"),
+            prenda.replace("PANTALON GRAFA", "PANTALÓN DE GRAFA"), 
             options=["🚫 NO APLICA"] + opts,
             width="medium"
         )
 
-    # El editor muestra el nombre y las prendas
     edited_df = st.data_editor(
         df_sucursal[["APELLIDO Y NOMBRE"] + prendas],
         column_config=config_visual,
@@ -76,32 +84,29 @@ if password == pass_correcta:
         use_container_width=True
     )
 
-    # --- BOTÓN GUARDAR ---
     if st.button("💾 GUARDAR CAMBIOS"):
         with st.spinner("Actualizando Maestro..."):
             try:
                 for prenda in prendas:
                     nuevos_valores = edited_df[prenda].values
                     final_save = []
-                    
-                    for i, val in enumerate(nuevos_valores):
-                        # Si quedó en None (era un pedido y no eligieron talle)
-                        if pd.isna(val) or val == "None" or val == "":
-                            final_save.append("1")
-                        # Si dice No Aplica, guardamos vacío
+                    for val in nuevos_valores:
+                        if val == "👉 ELEGIR":
+                            final_save.append("1") # Mantenemos el 1 si no eligieron talle
                         elif val == "🚫 NO APLICA":
-                            final_save.append("")
-                        # Si eligieron un talle real, lo guardamos
+                            final_save.append("") # Guardamos vacío en el Excel
                         else:
-                            final_save.append(val)
+                            final_save.append(val) # Guardamos el talle elegido
                     
                     df.loc[mask_sucursal, prenda] = final_save
 
                 conn.update(data=df)
                 st.balloons()
-                st.success("✅ Datos guardados correctamente en Google Sheets.")
+                st.success("✅ ¡Guardado con éxito!")
             except Exception as e:
                 st.error(f"❌ Error al guardar: {e}")
 else:
-    if password: st.error("🔑 Contraseña incorrecta")
-    else: st.info("Introduzca la contraseña de la sucursal.")
+    if password:
+        st.error("🔑 Contraseña incorrecta")
+    else:
+        st.info(f"Esperando contraseña de sucursal... (ej: {sucursal_sel.lower()}2026)")
