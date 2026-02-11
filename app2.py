@@ -1,193 +1,172 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import pagesizes
-from reportlab.lib.units import inch
-from io import BytesIO
-
-st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
+import os
+from fpdf import FPDF
 
 # =========================
-# 🎨 ESTILO CORPORATIVO
+# CONFIGURACIÓN
 # =========================
-st.markdown("""
+
+st.set_page_config(layout="wide")
+
+AZUL = "#162B3D"
+AMARILLO = "#E1AD41"
+
+# =========================
+# ESTILOS PERSONALIZADOS
+# =========================
+
+st.markdown(f"""
 <style>
-.main {background-color: #F8F9FA;}
-h1, h2, h3 {color: #162B3D;}
 
-div.stButton > button {
-    background-color: #E1AD41;
-    color: #162B3D;
+section[data-testid="stSidebar"] {{
+    background-color: {AZUL};
+    color: white;
+}}
+
+section[data-testid="stSidebar"] .stSelectbox label,
+section[data-testid="stSidebar"] .stTextInput label {{
+    color: white !important;
+}}
+
+div.stButton > button {{
+    background-color: {AMARILLO};
+    color: black;
     font-weight: bold;
     border-radius: 8px;
-    height: 45px;
-}
+}}
 
-div.stButton > button:hover {
-    background-color: #c9972f;
-    color: white;
-}
+.no-aplica {{
+    font-weight: bold;
+}}
+
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Gestión de Uniformes")
+# =========================
+# SIDEBAR
+# =========================
+
+st.sidebar.title("Acceso Sucursales")
+
+sucursal = st.sidebar.selectbox("Seleccione su Sucursal", ["AGUILARES"])
+gerente = st.sidebar.text_input("Nombre del Gerente")
 
 # =========================
-# CONEXIÓN
+# DATOS BASE (SIMULACIÓN)
 # =========================
-conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(ttl=0)
-df.columns = [str(c).strip() for c in df.columns]
+
+empleados = [
+    "ZELARAYAN PABLO NERI",
+    "MASS MELINA PATRICIA",
+    "PAGANI DANIEL ALEJANDRO",
+    "GORDILLO RICARDO JAVIER",
+    "CISTERNA JULIO CESAR",
+    "ARANDA RUBEN ALEJANDRO",
+    "BURGOS ENZO NICOLAS",
+    "MEDINA MIGUEL IGNACIO",
+    "MORAN JUAN CARLOS",
+    "VELIZ EDUARDO HERNAN"
+]
+
+columnas = [
+    "PANTALON GRAFA",
+    "CHOMBA MANGAS LARGAS",
+    "CAMPERA HOMBRE",
+    "CAMISA HOMBRE",
+    "CAMPERA MUJER",
+    "CAMISA MUJER"
+]
+
+st.title(f"Planilla de {sucursal}")
+
+st.info("Complete únicamente las prendas necesarias.")
 
 # =========================
-# LOGIN
+# TABLA EDITABLE
 # =========================
-st.sidebar.header("Acceso Sucursales")
-sucursales = sorted(df["SUCURSAL"].dropna().unique())
-sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
 
-pass_correcta = f"{sucursal_sel.lower().replace(' ', '')}2026"
-password = st.sidebar.text_input("Contraseña", type="password")
+datos = []
 
-if password == pass_correcta:
-
-    mask_sucursal = df["SUCURSAL"] == sucursal_sel
-    df_sucursal = df[mask_sucursal].copy()
-
-    prendas = [
-        "PANTALON GRAFA",
-        "CHOMBA MANGAS LARGAS",
-        "CAMPERA HOMBRE",
-        "CAMISA HOMBRE",
-        "CAMPERA MUJER",
-        "CAMISA MUJER"
-    ]
-
-    t_num = ["36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
-    t_let = ["S","M","L","XL","XXL","XXXL","4XL","5XL"]
-    t_cam = ["38","40","42","44","46","48","50","52","54","56","58","60"]
-
-    df_editor = df_sucursal[["APELLIDO Y NOMBRE"] + prendas].copy()
-
-    no_aplica_mask = {}
-
-    for prenda in prendas:
-
-        df_editor[prenda] = (
-            df_editor[prenda]
-            .astype(str)
-            .str.strip()
-            .replace({"nan":"", "None":"", "0.0":"", "0":""})
+for emp in empleados:
+    fila = {"Empleado": emp}
+    
+    for col in columnas:
+        opcion = st.selectbox(
+            f"{emp} - {col}",
+            ["ELEGIR", "NO APLICA", "XS", "S", "M", "L", "XL", "XXL"],
+            key=f"{emp}_{col}"
         )
+        fila[col] = opcion
+    
+    datos.append(fila)
 
-        # VACÍO REAL → NO APLICA
-        no_aplica_mask[prenda] = df_editor[prenda] == ""
+df = pd.DataFrame(datos)
 
-        # 1 → pendiente editable
-        df_editor.loc[df_editor[prenda] == "1", prenda] = None
+# =========================
+# VALIDACIÓN
+# =========================
 
-        # Mostrar NO APLICA
-        df_editor.loc[no_aplica_mask[prenda], prenda] = "NO APLICA"
+incompletos = []
 
-    st.markdown(f"## Planilla de {sucursal_sel}")
+for index, row in df.iterrows():
+    for col in columnas:
+        if row[col] == "ELEGIR":
+            incompletos.append(row["Empleado"])
+            break
 
-    column_config = {
-        "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True),
-    }
-
-    for prenda in prendas:
-        if "PANTALON" in prenda:
-            opts = t_num
-        elif "CAMISA" in prenda:
-            opts = t_cam
-        else:
-            opts = t_let
-
-        column_config[prenda] = st.column_config.SelectboxColumn(
-            prenda,
-            options=opts,
-            required=False
-        )
-
-    edited_df = st.data_editor(
-        df_editor,
-        column_config=column_config,
-        hide_index=True,
-        use_container_width=True,
-        disabled=no_aplica_mask
-    )
-
-    # =========================
-    # GUARDAR
-    # =========================
-    if st.button("GUARDAR CAMBIOS Y GENERAR ACUSE"):
-
-        # Guardar en sheet
-        for prenda in prendas:
-            nuevos = edited_df[prenda].values
-            final = []
-
-            for val in nuevos:
-                if val == "NO APLICA":
-                    final.append("")
-                elif pd.isna(val):
-                    final.append("1")
-                else:
-                    final.append(val)
-
-            df.loc[mask_sucursal, prenda] = final
-
-        conn.update(data=df)
-
-        # =========================
-        # PDF EN MEMORIA (SIN ERROR)
-        # =========================
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
-        elements = []
-        styles = getSampleStyleSheet()
-
-        fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
-
-        elements.append(Paragraph("ACUSE DE CARGA DE TALLES", styles["Heading1"]))
-        elements.append(Spacer(1, 0.3 * inch))
-        elements.append(Paragraph(f"Sucursal: {sucursal_sel}", styles["Normal"]))
-        elements.append(Paragraph(f"Fecha y Hora: {fecha}", styles["Normal"]))
-        elements.append(Spacer(1, 0.3 * inch))
-
-        data_table = [["Empleado"] + prendas]
-
-        for _, row in edited_df.iterrows():
-            fila = [row["APELLIDO Y NOMBRE"]]
-            for prenda in prendas:
-                fila.append(row[prenda] if pd.notna(row[prenda]) else "PENDIENTE")
-            data_table.append(fila)
-
-        table = Table(data_table, repeatRows=1)
-        table.setStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#162B3D")),
-            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
-        ])
-
-        elements.append(table)
-        doc.build(elements)
-
-        buffer.seek(0)
-
-        st.success("Datos actualizados correctamente.")
-
-        st.download_button(
-            label="Descargar ACUSE PDF",
-            data=buffer,
-            file_name=f"ACUSE_{sucursal_sel}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-            mime="application/pdf"
-        )
-
+if incompletos:
+    st.error(f"Hay empleados sin completar: {', '.join(incompletos)}")
 else:
-    if password:
-        st.error("Contraseña incorrecta")
+    st.success("Todos los empleados tienen sus talles completos.")
+
+# =========================
+# GENERAR ACUSE
+# =========================
+
+if st.button("GUARDAR CAMBIOS Y GENERAR ACUSE"):
+
+    if incompletos:
+        st.error("No se puede generar el acuse. Hay empleados sin completar.")
+    else:
+
+        if not gerente:
+            st.error("Debe ingresar el nombre del gerente.")
+        else:
+            now = datetime.now()
+            fecha_str = now.strftime("%Y%m%d_%H%M%S")
+            
+            os.makedirs("/mnt/data", exist_ok=True)
+            filename = f"/mnt/data/ACUSE_{sucursal}_{fecha_str}.pdf"
+
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            pdf.set_font("Arial", size=10)
+
+            pdf.cell(200, 10, txt="ACUSE DE CARGA DE UNIFORMES", ln=True, align='C')
+            pdf.ln(5)
+
+            pdf.cell(200, 8, txt=f"Sucursal: {sucursal}", ln=True)
+            pdf.cell(200, 8, txt=f"Gerente: {gerente}", ln=True)
+            pdf.cell(200, 8, txt=f"Fecha y Hora: {now.strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
+            pdf.ln(5)
+
+            for index, row in df.iterrows():
+                pdf.cell(200, 8, txt=f"Empleado: {row['Empleado']}", ln=True)
+                for col in columnas:
+                    pdf.cell(200, 6, txt=f"   {col}: {row[col]}", ln=True)
+                pdf.ln(3)
+
+            pdf.output(filename)
+
+            with open(filename, "rb") as file:
+                st.download_button(
+                    label="Descargar ACUSE",
+                    data=file,
+                    file_name=f"ACUSE_{sucursal}_{fecha_str}.pdf",
+                    mime="application/pdf"
+                )
+
+            st.success("Acuse generado correctamente.")
