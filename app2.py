@@ -105,6 +105,4 @@ if password == pass_correcta:
                 st.error(f"❌ Error al guardar: {e}")
 else:
     if password: st.error("🔑 Contraseña incorrecta")
-    else: st.info("Ingrese contraseña (ej: aguilares2026)")
-    else:
-        st.info("Introduzca la contraseña de sucursal para ver los colaboradores.")
+    else: st.info("Introduzca la contraseña de sucursal para ver los colaboradores.")
