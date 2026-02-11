@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 
@@ -29,100 +30,87 @@ if password == pass_correcta:
     mask_sucursal = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask_sucursal].copy()
 
-    # --- TALLES REALES (SIN ELEGIR NI NO APLICA) ---
     t_num = ["36", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60", "62"]
     t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
     t_cam = ["38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60"]
 
-    prendas = [
-        "PANTALON GRAFA",
-        "CHOMBA MANGAS LARGAS",
-        "CAMPERA HOMBRE",
-        "CAMISA HOMBRE",
-        "CAMPERA MUJER",
-        "CAMISA MUJER"
-    ]
+    prendas = ["PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"]
 
-    # --- LIMPIEZA DE DATOS ---
+    # --- LIMPIEZA Y PREPARACIÓN ---
     for prenda in prendas:
-        df_sucursal[prenda] = (
-            df_sucursal[prenda]
-            .astype(str)
-            .str.strip()
-            .replace({"nan": "", "None": "", "0.0": "", "0": ""})
-        )
+        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({"nan": "", "None": "", "0.0": "", "0": ""})
 
-    # --- PREPARACIÓN PARA VISUALIZACIÓN ---
     df_editor = df_sucursal[["APELLIDO Y NOMBRE"] + prendas].copy()
-
-    # Creamos máscara de NO APLICA (celdas vacías reales)
     no_aplica_mask = {}
 
     for prenda in prendas:
         no_aplica_mask[prenda] = df_editor[prenda] == ""
-        
-        # Si tiene "1" lo dejamos vacío para que puedan elegir talle
         df_editor.loc[df_editor[prenda] == "1", prenda] = None
-        
-        # Si está vacío real → lo mostramos como texto fijo
         df_editor.loc[no_aplica_mask[prenda], prenda] = "NO APLICA"
 
     st.write(f"### Planilla de {sucursal_sel}")
-    st.info("💡 Solo completá las celdas vacías. Si dice 'NO APLICA', no requiere esa prenda.")
-
-    # --- CONFIGURACIÓN DE COLUMNAS ---
-    column_config = {
-        "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True),
-    }
-
+    
+    column_config = {"APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True)}
     for prenda in prendas:
-        if "PANTALON" in prenda:
-            opts = t_num
-        elif "CAMISA" in prenda:
-            opts = t_cam
-        else:
-            opts = t_let
+        opts = t_num if "PANTALON" in prenda else (t_cam if "CAMISA" in prenda else t_let)
+        column_config[prenda] = st.column_config.SelectboxColumn(prenda.replace("PANTALON GRAFA", "PANTALÓN DE GRAFA"), options=opts)
 
-        column_config[prenda] = st.column_config.SelectboxColumn(
-            prenda.replace("PANTALON GRAFA", "PANTALÓN DE GRAFA"),
-            options=opts,
-            required=False
-        )
+    edited_df = st.data_editor(df_editor, column_config=column_config, hide_index=True, use_container_width=True)
 
-    edited_df = st.data_editor(
-        df_editor,
-        column_config=column_config,
-        hide_index=True,
-        use_container_width=True
-    )
-
-    # --- GUARDAR ---
-    if st.button("💾 GUARDAR CAMBIOS"):
-        with st.spinner("Actualizando Maestro..."):
+    # --- GUARDAR CON ACUSE ---
+    if st.button("💾 GUARDAR CAMBIOS Y GENERAR ACUSE"):
+        with st.spinner("Procesando y registrando evidencia..."):
             try:
+                cambios_realizados = []
                 for prenda in prendas:
                     nuevos_valores = edited_df[prenda].values
                     final_save = []
 
                     for i, val in enumerate(nuevos_valores):
+                        empleado = edited_df.iloc[i]["APELLIDO Y NOMBRE"]
+                        
                         if no_aplica_mask[prenda].iloc[i]:
-                            final_save.append("")  # Sigue siendo NO APLICA
+                            final_save.append("")
                         elif pd.isna(val):
-                            final_save.append("1")  # No eligió talle
+                            final_save.append("1")
                         else:
-                            final_save.append(val)  # Talle elegido
+                            final_save.append(val)
+                            # Si es un talle real, lo anotamos para el acuse
+                            cambios_realizados.append(f"{empleado}: {prenda} -> {val}")
                     
                     df.loc[mask_sucursal, prenda] = final_save
 
+                # 1. Actualizar Maestro
                 conn.update(data=df)
+
+                # 2. Generar Acuse Visual
+                ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                
                 st.balloons()
-                st.success("✅ ¡Guardado con éxito! Los datos ya están en tu Google Sheet.")
+                st.success(f"✅ ¡Datos guardados exitosamente!")
+                
+                # --- DISEÑO DEL TICKET ---
+                st.markdown(f"""
+                <div style="border: 2px solid #000; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #000">
+                    <h2 style="text-align: center;">📄 ACUSE DE RECIBO - UNIFORMES</h2>
+                    <p><strong>Sucursal:</strong> {sucursal_sel}</p>
+                    <p><strong>Fecha y Hora:</strong> {ahora}</p>
+                    <hr>
+                    <p><strong>Detalle de carga:</strong></p>
+                    <ul>
+                        {"".join([f"<li>{item}</li>" for item in cambios_realizados if "->" in item])}
+                    </ul>
+                    <hr>
+                    <p style="font-size: 0.8em; text-align: center;">Este documento sirve como comprobante de carga. <br> 
+                    ID de Transacción: {hash(ahora)}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.info("⬆️ **Tomá una captura de pantalla de este recuadro como comprobante.**")
 
             except Exception as e:
-                st.error(f"❌ Error al guardar: {e}")
+                st.error(f"❌ Error: {e}")
 
 else:
-    if password:
-        st.error("🔑 Contraseña incorrecta")
-    else:
-        st.info(f"Esperando contraseña de sucursal... (ej: {sucursal_sel.lower()}2026)")
+    if password: st.error("🔑 Contraseña incorrecta")
+    else: st.info(f"Esperando contraseña de {sucursal_sel}...")
