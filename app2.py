@@ -29,7 +29,7 @@ if password == pass_correcta:
     mask_sucursal = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask_sucursal].copy()
 
-    # --- LISTAS DE TALLES PURAS (Sin textos de ayuda) ---
+    # --- LISTAS DE TALLES ---
     t_num = [str(i) for i in range(36, 64, 2)]
     t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
     t_cam = [str(i) for i in range(38, 62, 2)]
@@ -38,13 +38,16 @@ if password == pass_correcta:
 
     # --- PROCESAMIENTO DE DATOS ---
     for prenda in prendas:
+        # Limpiamos los datos
         df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({'nan': '', 'None': '', '0.0': '', '0': ''})
-        # Marcamos internamente las que son "1" para saber que son editables
-        # Pero en la vista las dejamos vacías para que el placeholder actúe
-        df_sucursal.loc[df_sucursal[prenda] == "1", prenda] = None 
+        
+        # Si NO es un pedido (celda vacía), le ponemos el texto fijo
+        df_sucursal.loc[df_sucursal[prenda] == "", prenda] = "🚫 NO APLICA"
+        # Si ES un pedido (valor 1), lo dejamos vacío para que elijan
+        df_sucursal.loc[df_sucursal[prenda] == "1", prenda] = None
 
     st.write(f"### Planilla de {sucursal_sel}")
-    st.info("💡 Solo podés editar las celdas donde aparece 'Seleccionar...'. Las celdas grises están bloqueadas.")
+    st.info("💡 Solo podés elegir talles en las celdas que NO dicen '🚫 NO APLICA'.")
 
     # --- CONFIGURACIÓN DEL EDITOR ---
     config_visual = {
@@ -52,22 +55,20 @@ if password == pass_correcta:
     }
 
     for prenda in prendas:
-        # Definir opciones
+        # Definir qué lista de talles usar
         if "PANTALON" in prenda: opts = t_num
         elif "CAMISA" in prenda: opts = t_cam
         else: opts = t_let
         
-        # Lógica: Si el empleado NO tiene un pedido (celda vacía), desactivamos la columna para esa fila
-        # Como Streamlit no permite desactivar 'celdas' individuales fácil, usamos el Placeholder
+        # Agregamos "🚫 NO APLICA" como una opción válida para evitar el TypeError
+        # pero el gerente sabrá que no debe tocarla.
         config_visual[prenda] = st.column_config.SelectboxColumn(
             prenda.replace("PANTALON GRAFA", "PANTALÓN DE GRAFA"),
-            options=opts,
-            placeholder="🚫 NO APLICA", # Este texto aparece en gris y no es seleccionable
+            options=["🚫 NO APLICA"] + opts,
             width="medium"
         )
 
-    # Creamos un DF limpio para editar
-    # Las celdas que eran "" (No aplica) se mantienen vacías y mostrarán el placeholder gris
+    # El editor muestra el nombre y las prendas
     edited_df = st.data_editor(
         df_sucursal[["APELLIDO Y NOMBRE"] + prendas],
         column_config=config_visual,
@@ -75,6 +76,7 @@ if password == pass_correcta:
         use_container_width=True
     )
 
+    # --- BOTÓN GUARDAR ---
     if st.button("💾 GUARDAR CAMBIOS"):
         with st.spinner("Actualizando Maestro..."):
             try:
@@ -82,17 +84,14 @@ if password == pass_correcta:
                     nuevos_valores = edited_df[prenda].values
                     final_save = []
                     
-                    # Recuperamos los valores originales para comparar
-                    originales = df_sucursal[prenda].values
-                    
                     for i, val in enumerate(nuevos_valores):
-                        # Si el valor es None (no tocaron la celda)
-                        if pd.isna(val) or val == "" or val == "None":
-                            # Si originalmente era un pedido (None en nuestra transformación), devolvemos el 1
-                            if pd.isna(df_sucursal.iloc[i][prenda]):
-                                final_save.append("1")
-                            else:
-                                final_save.append("")
+                        # Si quedó en None (era un pedido y no eligieron talle)
+                        if pd.isna(val) or val == "None" or val == "":
+                            final_save.append("1")
+                        # Si dice No Aplica, guardamos vacío
+                        elif val == "🚫 NO APLICA":
+                            final_save.append("")
+                        # Si eligieron un talle real, lo guardamos
                         else:
                             final_save.append(val)
                     
@@ -100,9 +99,9 @@ if password == pass_correcta:
 
                 conn.update(data=df)
                 st.balloons()
-                st.success("✅ Datos guardados correctamente.")
+                st.success("✅ Datos guardados correctamente en Google Sheets.")
             except Exception as e:
                 st.error(f"❌ Error al guardar: {e}")
 else:
     if password: st.error("🔑 Contraseña incorrecta")
-    else: st.info("Ingrese contraseña para continuar.")
+    else: st.info("Introduzca la contraseña de la sucursal.")
