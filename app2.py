@@ -6,7 +6,7 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 
-# --- FUNCIÓN PARA GENERAR PDF CORREGIDA ---
+# --- FUNCIÓN PARA GENERAR PDF ---
 def generar_pdf(sucursal, fecha, datos_tabla):
     pdf = FPDF()
     pdf.add_page()
@@ -19,130 +19,107 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     pdf.cell(190, 7, f"Fecha de Operación: {fecha}", ln=True)
     pdf.ln(10)
     
-    # Encabezados
-    pdf.set_fill_color(200, 200, 200)
-    pdf.set_font("Arial", "B", 8)
     cols = ["Empleado", "Pantalon", "Chomba", "Camp.H", "Cam.H", "Camp.M", "Cam.M"]
     widths = [60, 22, 22, 22, 22, 22, 22]
     
+    pdf.set_fill_color(200, 200, 200)
+    pdf.set_font("Arial", "B", 8)
     for i, col in enumerate(cols):
         pdf.cell(widths[i], 7, col, border=1, fill=True, align="C")
     pdf.ln()
     
-    # Filas (Limpiando emojis para el PDF)
     pdf.set_font("Arial", "", 7)
     for row in datos_tabla:
-        for i, val in enumerate(row):
-            texto = str(val)
-            # Quitamos emojis para que no de error la fuente del PDF
-            texto = texto.replace("🚫 ", "").replace("👉 ", "")
-            if texto == "None" or texto == "nan": texto = ""
-            pdf.cell(widths[i], 7, texto, border=1, align="C")
+        for val in row:
+            texto = str(val).replace("🚫 ", "").replace("👉 ", "")
+            if texto in ["None", "nan", "1"]: texto = ""
+            pdf.cell(22 if row.index(val) > 0 else 60, 7, texto, border=1, align="C")
         pdf.ln()
     
-    pdf.ln(10)
-    pdf.set_font("Arial", "I", 8)
-    pdf.cell(190, 10, "Este documento sirve como comprobante oficial de la carga realizada.", align="C")
-    
-    # Retornamos como bytes (soluciona el error de bytearray)
     return bytes(pdf.output())
 
 st.title("👕 Carga de Talles - Gestión de Uniformes")
 
 # --- CONEXIÓN ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read(ttl=0)
+    # Leemos la pestaña principal
+    df = conn.read(worksheet="Sheet1", ttl=0) # Ajustar nombre de pestaña si es necesario
     df.columns = [str(c).strip() for c in df.columns]
 except Exception as e:
-    st.error(f"❌ Error de conexión: {e}")
+    st.error(f"Error al conectar: {e}")
     st.stop()
 
 # --- LOGIN ---
-st.sidebar.header("Acceso Sucursales")
 sucursales = sorted(df["SUCURSAL"].dropna().unique())
 sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
-
-pass_correcta = f"{sucursal_sel.lower().replace(' ', '')}2026"
 password = st.sidebar.text_input("Contraseña", type="password")
 
-if password == pass_correcta:
-    st.success(f"Sesión iniciada: {sucursal_sel}")
-    
+if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
     mask_sucursal = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask_sucursal].copy()
 
     prendas = ["PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"]
     
-    # --- PREPARACIÓN VISUAL (Para que aparezca preseleccionado) ---
+    # --- PROCESAMIENTO PARA EL EDITOR (Preselección de "Elegir Talle") ---
     for prenda in prendas:
-        # Limpieza de datos
-        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({"nan": "", "None": "", "0.0": "", "0": ""})
+        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip()
+        df_sucursal[prenda] = df_sucursal[prenda].replace({"nan": "", "None": "", "0": "", "0.0": ""})
         
-        # Lógica de preselección:
-        # 1. Si está vacío -> NO APLICA
-        # 2. Si tiene un "1" -> 👉 ELEGIR TALLE
-        # 3. Si tiene cualquier otra cosa -> Mantiene el talle que ya tenía
-        def transformar(x):
-            if x == "" or x == "nan": return "🚫 NO APLICA"
-            if x == "1": return "👉 ELEGIR TALLE"
-            return x
-        
-        df_sucursal[prenda] = df_sucursal[prenda].apply(transformar)
+        # Si el valor es "1", forzamos visualmente el texto "👉 ELEGIR TALLE"
+        df_sucursal.loc[df_sucursal[prenda] == "1", prenda] = "👉 ELEGIR TALLE"
+        # Si está vacío, "NO APLICA"
+        df_sucursal.loc[df_sucursal[prenda] == "", prenda] = "🚫 NO APLICA"
 
     df_editor = df_sucursal[["APELLIDO Y NOMBRE"] + prendas].copy()
 
-    # --- CONFIGURACIÓN DE TALLES ---
+    # Configuración de columnas
     t_num = ["👉 ELEGIR TALLE", "36", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60", "62"]
     t_let = ["👉 ELEGIR TALLE", "S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
     t_cam = ["👉 ELEGIR TALLE", "38", "40", "42", "44", "46", "48", "50", "52", "54", "56", "58", "60"]
 
     column_config = {"APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True)}
-    for prenda in prendas:
-        if "PANTALON" in prenda: opts = t_num
-        elif "CAMISA" in prenda: opts = t_cam
-        else: opts = t_let
-        
-        # Agregamos NO APLICA a las opciones para que sea compatible
-        column_config[prenda] = st.column_config.SelectboxColumn(
-            prenda.replace("PANTALON GRAFA", "PANTALÓN"), 
-            options=["🚫 NO APLICA"] + opts
-        )
+    for p in prendas:
+        opts = t_num if "PANTALON" in p else (t_cam if "CAMISA" in p else t_let)
+        column_config[p] = st.column_config.SelectboxColumn(p, options=["🚫 NO APLICA"] + opts)
 
     st.write(f"### Planilla de {sucursal_sel}")
     edited_df = st.data_editor(df_editor, column_config=column_config, hide_index=True, use_container_width=True)
 
-    # --- GUARDADO Y PDF ---
-    if st.button("💾 GUARDAR Y GENERAR PDF"):
-        with st.spinner("Guardando y preparando PDF..."):
-            try:
-                for prenda in prendas:
-                    nuevos_valores = edited_df[prenda].values
-                    final_save = []
-                    for val in nuevos_valores:
-                        if val == "🚫 NO APLICA": final_save.append("")
-                        elif val == "👉 ELEGIR TALLE": final_save.append("1")
-                        else: final_save.append(val)
-                    df.loc[mask_sucursal, prenda] = final_save
+    if st.button("💾 GUARDAR Y REGISTRAR"):
+        with st.spinner("Procesando..."):
+            # 1. Preparar datos para actualizar Sheet1
+            for p in prendas:
+                valores = edited_df[p].apply(lambda x: "1" if x == "👉 ELEGIR TALLE" else ("" if x == "🚫 NO APLICA" else x))
+                df.loc[mask_sucursal, p] = valores.values
 
-                conn.update(data=df)
-                
-                # Generar PDF
-                filas_pdf = edited_df.values.tolist()
-                ahora = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                pdf_bytes = generar_pdf(sucursal_sel, ahora, filas_pdf)
-                
-                st.balloons()
-                st.success("✅ ¡Guardado con éxito!")
-                
-                st.download_button(
-                    label="📥 DESCARGAR ACUSE EN PDF",
-                    data=pdf_bytes,
-                    file_name=f"Acuse_{sucursal_sel}_{ahora.replace(':','-')}.pdf",
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
+            # 2. Guardar en Sheet1
+            conn.update(worksheet="Sheet1", data=df)
+
+            # 3. REGISTRO EN OTRA PESTAÑA (Constancia en el Sheets)
+            ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            try:
+                # Intentamos leer el historial existente
+                historial_df = conn.read(worksheet="HISTORIAL_ACUSES")
+            except:
+                # Si no existe, creamos la estructura
+                historial_df = pd.DataFrame(columns=["FECHA", "SUCURSAL", "DETALLE_CARGA"])
+            
+            # Resumimos la carga en un texto para la celda
+            detalle = str(edited_df.to_dict(orient='records'))
+            nueva_fila = pd.DataFrame([{"FECHA": ahora, "SUCURSAL": sucursal_sel, "DETALLE_CARGA": detalle}])
+            historial_df = pd.concat([historial_df, nueva_fila], ignore_index=True)
+            
+            # Actualizamos la pestaña de historial
+            conn.update(worksheet="HISTORIAL_ACUSES", data=historial_df)
+
+            # 4. Generar PDF para el usuario
+            pdf_bytes = generar_pdf(sucursal_sel, ahora, edited_df.values.tolist())
+            
+            st.success(f"✅ Datos guardados y registrados en 'HISTORIAL_ACUSES'.")
+            st.download_button("📥 DESCARGAR COMPROBANTE PDF", pdf_bytes, f"Acuse_{sucursal_sel}.pdf", "application/pdf")
+            st.balloons()
+
 else:
-    if password: st.error("🔑 Contraseña incorrecta")
-    else: st.info(f"Ingrese clave de {sucursal_sel}")
+    st.info("Por favor, ingrese la contraseña de su sucursal.")
