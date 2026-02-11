@@ -226,8 +226,4 @@ else:
     if password:
         st.error("Contraseña incorrecta")
     else:
-        st.info(f"Contraseña ejemplo: {sucursal_sel.lower()}2026")
-
-        st.error("🔑 Contraseña incorrecta")
-    else:
-        st.info(f"Esperando contraseña de sucursal... (ej: {sucursal_sel.lower()}2026)")
+        st.error("Contraseña incorrecta")
