@@ -2,56 +2,53 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Sistema de Uniformes", layout="wide")
+st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 
 st.title("👕 Carga de Talles - Gestión de Uniformes")
 
 # --- CONEXIÓN ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Leemos la planilla. Si tu pestaña se llama CASTILLO, la busca automáticamente
     df = conn.read(ttl=0)
-    # Limpieza de nombres de columnas
     df.columns = [str(c).strip() for c in df.columns]
 except Exception as e:
-    st.error("❌ Error de conexión con Google Sheets")
-    st.info(f"Detalle: {e}")
+    st.error(f"❌ Error de conexión: {e}")
     st.stop()
 
-# --- VALIDACIÓN DE DATOS ---
-if "SUCURSAL" not in df.columns:
-    st.error(f"No encontré la columna 'SUCURSAL'. Columnas actuales: {list(df.columns)}")
-    st.stop()
-
-# --- LOGIN Y FILTRO ---
+# --- LOGIN AUTOMÁTICO ---
+st.sidebar.header("Acceso Sucursales")
 sucursales = sorted(df["SUCURSAL"].dropna().unique())
 sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
+
+# La contraseña es el nombre en minúscula + 2026 (ej: aguilares2026)
+pass_correcta = f"{sucursal_sel.lower().replace(' ', '')}2026"
 password = st.sidebar.text_input("Contraseña", type="password")
 
-# Claves de acceso
-claves = {
-    "AGUILARES": "aguilares2026",
-    "PERICO": "perico2026",
-    "PLAZOLETA": "plazoleta2026"
-}
-
-if password == claves.get(sucursal_sel):
-    st.success(f"Conectado a {sucursal_sel}")
+if password == pass_correcta:
+    st.success(f"Sesión iniciada: {sucursal_sel}")
     
-    mask = df["SUCURSAL"] == sucursal_sel
-    df_sucursal = df[mask].copy()
+    # Filtrar por sucursal
+    df_sucursal = df[df["SUCURSAL"] == sucursal_sel].copy()
 
-    # Opciones de talles según tus imágenes
-    t_num = [str(i) for i in range(36, 64, 2)]
-    t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
-    t_cam = [str(i) for i in range(38, 62, 2)]
+    # --- DEFINICIÓN DE TALLES ---
+    t_num = [str(i) for i in range(36, 64, 2)] # 36 al 62
+    t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"] #
+    t_cam = [str(i) for i in range(38, 62, 2)] # 38 al 60
 
-    st.write("### Planilla de Colaboradores")
+    # --- TABLA SIMPLIFICADA ---
+    # Solo mostramos el Nombre y las prendas
+    columnas_visibles = [
+        "APELLIDO Y NOMBRE", "PANTALON GRAFA", "CHOMBA MANGAS LARGAS", 
+        "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"
+    ]
     
-    # Editor de tabla
+    st.write(f"### Colaboradores de {sucursal_sel}")
+    st.caption("Complete los talles en las celdas habilitadas.")
+
     edited_df = st.data_editor(
-        df_sucursal,
+        df_sucursal[columnas_visibles], # Aquí hacemos que vea SOLO lo que pediste
         column_config={
+            "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True),
             "PANTALON GRAFA": st.column_config.SelectboxColumn("Pantalón", options=t_num),
             "CHOMBA MANGAS LARGAS": st.column_config.SelectboxColumn("Chomba", options=t_let),
             "CAMPERA HOMBRE": st.column_config.SelectboxColumn("Camp. Hombre", options=t_let),
@@ -59,23 +56,23 @@ if password == claves.get(sucursal_sel):
             "CAMPERA MUJER": st.column_config.SelectboxColumn("Camp. Mujer", options=t_let),
             "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=t_cam),
         },
-        disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "APELLIDO Y NOMBRE", "CUIL", "Ingreso"],
         hide_index=True,
     )
 
     if st.button("💾 GUARDAR CAMBIOS"):
         try:
-            # Sincronizamos los cambios del editor al dataframe principal
-            df.loc[mask, :] = edited_df
-            # Enviamos de vuelta a Google Sheets
+            # Sincronizamos los cambios de vuelta al archivo maestro
+            for col in columnas_visibles:
+                if col != "APELLIDO Y NOMBRE":
+                    df.loc[df["SUCURSAL"] == sucursal_sel, col] = edited_df[col].values
+            
             conn.update(data=df)
             st.balloons()
-            st.success("¡Datos guardados exitosamente!")
+            st.success("¡Planilla actualizada!")
         except Exception as e:
             st.error(f"Error al guardar: {e}")
-            st.info("Asegurate de que el permiso en Google Sheets esté como 'Editor'.")
 else:
     if password:
         st.error("Contraseña incorrecta")
     else:
-        st.info("Introduzca la contraseña en el panel de la izquierda.")
+        st.info(f" ")
