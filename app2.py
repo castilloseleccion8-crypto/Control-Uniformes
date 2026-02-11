@@ -8,24 +8,19 @@ st.title("👕 Carga de Talles - Gestión de Uniformes")
 
 # --- CONEXIÓN ---
 try:
-    # Usamos la conexión oficial pero con manejo de errores manual
     conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # Intentamos leer la planilla. Si no ponemos 'worksheet', lee la primera.
+    # Leemos la planilla. Si tu pestaña se llama CASTILLO, la busca automáticamente
     df = conn.read(ttl=0)
-    
-    # Limpiamos los nombres de las columnas (sacamos espacios locos)
+    # Limpieza de nombres de columnas
     df.columns = [str(c).strip() for c in df.columns]
-    
 except Exception as e:
-    st.error("❌ Google Sheets rechazó la conexión.")
-    st.info(f"Detalle del error: {e}")
-    st.warning("REVISÁ ESTO: ¿El archivo está compartido como 'Cualquier persona con el enlace' y 'Editor'?")
+    st.error("❌ Error de conexión con Google Sheets")
+    st.info(f"Detalle: {e}")
     st.stop()
 
-# --- VERIFICACIÓN DE COLUMNA ---
+# --- VALIDACIÓN DE DATOS ---
 if "SUCURSAL" not in df.columns:
-    st.error(f"❌ No encontré la columna 'SUCURSAL'. Columnas detectadas: {list(df.columns)}")
+    st.error(f"No encontré la columna 'SUCURSAL'. Columnas actuales: {list(df.columns)}")
     st.stop()
 
 # --- LOGIN Y FILTRO ---
@@ -33,7 +28,7 @@ sucursales = sorted(df["SUCURSAL"].dropna().unique())
 sucursal_sel = st.sidebar.selectbox("Seleccione su Sucursal", sucursales)
 password = st.sidebar.text_input("Contraseña", type="password")
 
-# Diccionario de claves
+# Claves de acceso
 claves = {
     "AGUILARES": "aguilares2026",
     "PERICO": "perico2026",
@@ -46,11 +41,13 @@ if password == claves.get(sucursal_sel):
     mask = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask].copy()
 
-    # Configuración de talles
+    # Opciones de talles según tus imágenes
     t_num = [str(i) for i in range(36, 64, 2)]
     t_let = ["S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"]
     t_cam = [str(i) for i in range(38, 62, 2)]
 
+    st.write("### Planilla de Colaboradores")
+    
     # Editor de tabla
     edited_df = st.data_editor(
         df_sucursal,
@@ -62,21 +59,23 @@ if password == claves.get(sucursal_sel):
             "CAMPERA MUJER": st.column_config.SelectboxColumn("Camp. Mujer", options=t_let),
             "CAMISA MUJER": st.column_config.SelectboxColumn("Camisa Mujer", options=t_cam),
         },
-        disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "APELLIDO Y NOMBRE"],
+        disabled=["LEGAJO", "SUCURSAL", "POSICIÓN", "APELLIDO Y NOMBRE", "CUIL", "Ingreso"],
         hide_index=True,
     )
 
     if st.button("💾 GUARDAR CAMBIOS"):
         try:
+            # Sincronizamos los cambios del editor al dataframe principal
             df.loc[mask, :] = edited_df
+            # Enviamos de vuelta a Google Sheets
             conn.update(data=df)
             st.balloons()
-            st.success("¡Guardado correctamente en el Maestro!")
+            st.success("¡Datos guardados exitosamente!")
         except Exception as e:
             st.error(f"Error al guardar: {e}")
+            st.info("Asegurate de que el permiso en Google Sheets esté como 'Editor'.")
 else:
-    st.info("Por favor, ingrese la contraseña en la barra lateral.")
-            st.info("Intentando guardar... si aparece error de credenciales, te daré el paso final para habilitar la escritura.")
-            # Aquí iría el conn.update si la conexión base funciona
+    if password:
+        st.error("Contraseña incorrecta")
     else:
-        st.info("Ingresá la contraseña para ver los datos.")
+        st.info("Introduzca la contraseña en el panel de la izquierda.")
