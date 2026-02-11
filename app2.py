@@ -19,7 +19,7 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     pdf.cell(190, 7, f"Fecha de Operación: {fecha}", ln=True)
     pdf.ln(10)
     
-    # Encabezados de tabla
+    # Encabezados
     pdf.set_fill_color(200, 200, 200)
     pdf.set_font("Arial", "B", 8)
     cols = ["Empleado", "Pantalon", "Chomba", "Camp.H", "Cam.H", "Camp.M", "Cam.M"]
@@ -29,11 +29,19 @@ def generar_pdf(sucursal, fecha, datos_tabla):
         pdf.cell(widths[i], 7, col, border=1, fill=True, align="C")
     pdf.ln()
     
-    # Filas de la tabla
+    # Filas (Limpiando emojis para evitar el error)
     pdf.set_font("Arial", "", 7)
     for row in datos_tabla:
         for i, val in enumerate(row):
-            texto = str(val) if val else "-"
+            # Limpiamos los emojis solo para el PDF
+            texto = str(val)
+            texto = texto.replace("🚫 ", "").replace("👉 ", "")
+            
+            if val == "🚫 NO APLICA":
+                texto = "NO APLICA"
+            elif val == "👉 ELEGIR TALLE":
+                texto = "PENDIENTE"
+                
             pdf.cell(widths[i], 7, texto, border=1, align="C")
         pdf.ln()
     
@@ -42,7 +50,6 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     pdf.cell(190, 10, "Este documento sirve como comprobante oficial de la carga realizada.", align="C")
     
     return pdf.output()
-
 st.title("👕 Carga de Talles - Gestión de Uniformes")
 
 # --- CONEXIÓN ---
