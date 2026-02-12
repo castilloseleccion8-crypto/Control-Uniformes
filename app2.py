@@ -10,42 +10,34 @@ st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 # ===================== ESTILOS CORPORATIVOS =====================
 st.markdown("""
 <style>
-
-/* Fuente */
 html, body, [class*="css"] {
     font-family: 'Segoe UI', sans-serif;
 }
 
-/* Fondo general */
 .stApp {
     background-color: #f4f5f7;
 }
 
-/* Sidebar */
 section[data-testid="stSidebar"] {
     background-color: #0f1f3d;
     width: 270px;
 }
 
-/* Padding sidebar */
 section[data-testid="stSidebar"] > div {
     padding-top: 40px;
 }
 
-/* Labels blancos */
 label {
     color: white !important;
     font-weight: 600 !important;
     letter-spacing: 0.5px;
 }
 
-/* Inputs */
 input {
     border-radius: 6px !important;
     border: none !important;
 }
 
-/* Fondo violeta lateral */
 .main > div {
     background: linear-gradient(
         to right,
@@ -55,7 +47,6 @@ input {
     );
 }
 
-/* Título principal */
 .titulo {
     font-size: 44px;
     font-weight: 800;
@@ -72,7 +63,6 @@ input {
     margin-top: -15px;
 }
 
-/* Tarjeta blanca */
 .card {
     background-color: white;
     padding: 30px;
@@ -81,7 +71,6 @@ input {
     margin-top: 40px;
 }
 
-/* Botón corporativo */
 div.stButton > button {
     background-color: #0f1f3d;
     color: white;
@@ -95,13 +84,11 @@ div.stButton > button:hover {
     background-color: #1f2f5a;
 }
 
-/* Tabla */
 [data-testid="stDataEditor"] {
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid #e6e6e6;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,7 +128,7 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     pdf.set_font("Arial", "", 7)
     for row in datos_tabla:
         for i, val in enumerate(row):
-            texto = str(val)
+            texto = str(val).replace("🚫 ", "").replace("👉 ", "")
             if texto in ["None", "nan", "1", "1.0"]:
                 texto = ""
             pdf.cell(widths[i], 7, texto, border=1, align="C")
@@ -180,25 +167,37 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
         "CAMISA MUJER"
     ]
 
+    # 🔹 Volvemos a usar lógica con emojis
     for prenda in prendas:
         df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace(
             {"nan": "", "None": "", "0": "", "0.0": ""}
         )
 
+        def transformar_vista(val):
+            if val in ["1", "1.0"]:
+                return "👉 ELEGIR TALLE"
+            if val == "":
+                return "🚫 NO APLICA"
+            return val
+
+        df_sucursal[prenda] = df_sucursal[prenda].apply(transformar_vista)
+
     df_editor = df_sucursal[["APELLIDO Y NOMBRE"] + prendas].copy()
 
-    t_num = ["36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
-    t_let = ["S","M","L","XL","XXL","XXXL","4XL","5XL"]
-    t_cam = ["38","40","42","44","46","48","50","52","54","56","58","60"]
+    t_num = ["👉 ELEGIR TALLE","36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
+    t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL","5XL"]
+    t_cam = ["👉 ELEGIR TALLE","38","40","42","44","46","48","50","52","54","56","58","60"]
 
     column_config = {"APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True)}
 
     for p in prendas:
         opts = t_num if "PANTALON" in p else (t_cam if "CAMISA" in p else t_let)
-        column_config[p] = st.column_config.SelectboxColumn(p, options=[""] + opts)
+        column_config[p] = st.column_config.SelectboxColumn(
+            p,
+            options=["🚫 NO APLICA"] + opts
+        )
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
-
     st.subheader(f"Sucursal: {sucursal_sel}")
 
     edited_df = st.data_editor(
@@ -212,7 +211,13 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
         with st.spinner("Procesando..."):
             try:
                 for p in prendas:
-                    df.loc[mask_sucursal, p] = edited_df[p].values
+                    def revertir(val):
+                        if val == "👉 ELEGIR TALLE":
+                            return "1"
+                        if val == "🚫 NO APLICA":
+                            return ""
+                        return val
+                    df.loc[mask_sucursal, p] = edited_df[p].apply(revertir).values
 
                 conn.update(worksheet="CASTILLO", data=df)
 
