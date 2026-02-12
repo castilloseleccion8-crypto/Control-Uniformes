@@ -7,7 +7,7 @@ from PIL import Image
 
 st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 
-# ===================== ESTILOS CORPORATIVOS =====================
+# ===================== ESTILOS =====================
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -30,12 +30,6 @@ section[data-testid="stSidebar"] > div {
 label {
     color: white !important;
     font-weight: 600 !important;
-    letter-spacing: 0.5px;
-}
-
-input {
-    border-radius: 6px !important;
-    border: none !important;
 }
 
 .main > div {
@@ -82,12 +76,6 @@ div.stButton > button {
 
 div.stButton > button:hover {
     background-color: #1f2f5a;
-}
-
-[data-testid="stDataEditor"] {
-    border-radius: 12px;
-    overflow: hidden;
-    border: 1px solid #e6e6e6;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -158,6 +146,17 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
     mask_sucursal = df["SUCURSAL"] == sucursal_sel
     df_sucursal = df[mask_sucursal].copy()
 
+    # 🔹 Ordenar por POSICIÓN
+    df_sucursal = df_sucursal.sort_values(by="POSICIÓN")
+
+    # 🔹 Buscador
+    filtro = st.text_input("Buscar empleado por nombre")
+
+    if filtro:
+        df_sucursal = df_sucursal[
+            df_sucursal["APELLIDO Y NOMBRE"].str.contains(filtro, case=False, na=False)
+        ]
+
     prendas = [
         "PANTALON GRAFA",
         "CHOMBA MANGAS LARGAS",
@@ -167,7 +166,7 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
         "CAMISA MUJER"
     ]
 
-    # 🔹 Volvemos a usar lógica con emojis
+    # Transformación con emojis
     for prenda in prendas:
         df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace(
             {"nan": "", "None": "", "0": "", "0.0": ""}
@@ -182,19 +181,24 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
 
         df_sucursal[prenda] = df_sucursal[prenda].apply(transformar_vista)
 
-    df_editor = df_sucursal[["APELLIDO Y NOMBRE"] + prendas].copy()
+    df_editor = df_sucursal[["POSICIÓN","CUIL","APELLIDO Y NOMBRE"] + prendas].copy()
 
     t_num = ["👉 ELEGIR TALLE","36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
     t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL","5XL"]
     t_cam = ["👉 ELEGIR TALLE","38","40","42","44","46","48","50","52","54","56","58","60"]
 
-    column_config = {"APELLIDO Y NOMBRE": st.column_config.Column("Empleado", disabled=True)}
+    column_config = {
+        "POSICIÓN": st.column_config.Column("Posición", width="small", disabled=True),
+        "CUIL": st.column_config.Column("CUIL", width="medium", disabled=True),
+        "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", width="large", disabled=True)
+    }
 
     for p in prendas:
         opts = t_num if "PANTALON" in p else (t_cam if "CAMISA" in p else t_let)
         column_config[p] = st.column_config.SelectboxColumn(
             p,
-            options=["🚫 NO APLICA"] + opts
+            options=["🚫 NO APLICA"] + opts,
+            width="small"
         )
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -217,25 +221,11 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
                         if val == "🚫 NO APLICA":
                             return ""
                         return val
-                    df.loc[mask_sucursal, p] = edited_df[p].apply(revertir).values
+                    df.loc[df["SUCURSAL"] == sucursal_sel, p] = edited_df[p].apply(revertir).values
 
                 conn.update(worksheet="CASTILLO", data=df)
 
                 ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-                try:
-                    historial_df = conn.read(worksheet="HISTORIAL_ACUSES", ttl=0)
-                except:
-                    historial_df = pd.DataFrame(columns=["FECHA","SUCURSAL","ACCION"])
-
-                nueva_fila = pd.DataFrame([{
-                    "FECHA": ahora,
-                    "SUCURSAL": sucursal_sel,
-                    "ACCION": "Carga confirmada"
-                }])
-
-                historial_df = pd.concat([historial_df, nueva_fila], ignore_index=True)
-                conn.update(worksheet="HISTORIAL_ACUSES", data=historial_df)
 
                 pdf_bytes = generar_pdf(sucursal_sel, ahora, edited_df.values.tolist())
 
