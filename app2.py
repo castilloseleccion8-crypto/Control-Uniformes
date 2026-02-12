@@ -16,14 +16,15 @@ html, body, [class*="css"]  {
     font-family: 'Segoe UI', sans-serif;
 }
 
-/* Fondo general con degradado */
+/* Fondo limpio */
 .stApp {
-    background: linear-gradient(
-        135deg,
-        #dcd2e8 0%,
-        #e9e4f2 40%,
-        #f4f5f7 100%
-    );
+    background-color: #f4f5f7;
+}
+
+/* Eliminar padding superior molesto */
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 2rem;
 }
 
 /* Sidebar */
@@ -43,7 +44,7 @@ label {
 
 /* Títulos */
 .titulo {
-    font-size: 42px;
+    font-size: 40px;
     font-weight: 800;
     color: #0f1f3d;
     text-align: center;
@@ -52,11 +53,11 @@ label {
 }
 
 .subtitulo {
-    font-size: 34px;
+    font-size: 32px;
     font-weight: 700;
     color: #0f1f3d;
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
 /* Card blanca */
@@ -64,8 +65,8 @@ label {
     background-color: white;
     padding: 35px;
     border-radius: 18px;
-    box-shadow: 0 10px 35px rgba(0,0,0,0.08);
-    margin-top: 20px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    margin-top: 10px;
 }
 
 /* Botones */
@@ -80,12 +81,6 @@ div.stButton > button {
 
 div.stButton > button:hover {
     background-color: #1f2f5a;
-}
-
-/* Quitar espacio superior default */
-.block-container {
-    padding-top: 1rem;
-    padding-bottom: 2rem;
 }
 
 </style>
@@ -137,7 +132,6 @@ def generar_pdf(sucursal, fecha, datos_tabla):
 
 # ===================== CONEXIÓN =====================
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 df = conn.read(worksheet="CASTILLO", ttl=0)
 df.columns = [str(c).strip() for c in df.columns]
 
