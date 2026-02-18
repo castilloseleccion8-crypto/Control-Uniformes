@@ -25,7 +25,7 @@ div.stButton > button:hover { background-color: #1f2f5a; }
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== FUNCIÓN PDF CORREGIDA =====================
+# ===================== FUNCIÓN PDF =====================
 def generar_pdf(sucursal, fecha, df_para_pdf):
     pdf = FPDF()
     pdf.add_page()
@@ -51,7 +51,7 @@ def generar_pdf(sucursal, fecha, df_para_pdf):
     for _, row in df_para_pdf.iterrows():
         for i, col_name in enumerate(cols_reales):
             val = str(row[col_name]).replace("🚫 ", "").replace("👉 ", "")
-            if val in ["None", "nan", "1", "1.0", "ELEGIR TALLE"]: val = ""
+            if val in ["None", "nan", "1", "1.0", "ELEGIR TALLE", "1.0"]: val = ""
             if "NO APLICA" in val: val = "-"
             pdf.cell(widths[i], 7, val, border=1, align="C")
         pdf.ln()
@@ -72,6 +72,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 try:
     df_global = conn.read(worksheet="CASTILLO", ttl=0)
     df_global.columns = [str(c).strip() for c in df_global.columns]
+    # FORZAR TODO A TEXTO PARA EVITAR ERRORES CON NÚMEROS
+    df_global = df_global.astype(str)
 except Exception:
     st.error("⚠️ **ESPERA 2M, RECARGA LA PAGINA Y VOLVE A INTENTARLO. SI EL ERROR PERSISTE COMUNICARSE CON RRHH**")
     st.stop()
@@ -83,32 +85,32 @@ with st.sidebar:
     password = st.text_input("CONTRASEÑA", type="password")
 
 if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
-    # 1. Filtrar los datos de la sucursal seleccionada
     df_sucursal = df_global[df_global["SUCURSAL"] == sucursal_sel].copy()
-    df_sucursal = df_sucursal.sort_values(by="POSICIÓN")
-
+    
     prendas = ["PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"]
 
-    # 2. Transformar para vista amigable
+    # --- LIMPIEZA CRÍTICA DE DATOS ---
     for prenda in prendas:
-        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({"nan": "", "None": "", "0": "", "0.0": ""})
+        # Convertimos todo a string y limpiamos decimales feos como .0
+        df_sucursal[prenda] = df_sucursal[prenda].str.replace(".0", "", regex=False).str.strip()
+        df_sucursal[prenda] = df_sucursal[prenda].replace({"nan": "", "None": "", "0": ""})
+        
         def transformar(val):
-            if val in ["1", "1.0"]: return "👉 ELEGIR TALLE"
-            if val == "": return "🚫 NO APLICA"
+            if val == "1": return "👉 ELEGIR TALLE"
+            if val == "" or val == " ": return "🚫 NO APLICA"
             return val
         df_sucursal[prenda] = df_sucursal[prenda].apply(transformar)
 
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader(f"Sucursal: {sucursal_sel}")
 
-    # 🔎 Buscador
     filtro = st.text_input("", placeholder="🔎 Buscar empleado por nombre")
     
-    # Preparamos el DataFrame para mostrar (solo lo que se ve en la card)
     df_mostrar = df_sucursal[["POSICIÓN","CUIL","APELLIDO Y NOMBRE"] + prendas].copy()
     if filtro:
         df_mostrar = df_mostrar[df_mostrar["APELLIDO Y NOMBRE"].str.contains(filtro, case=False, na=False)]
 
+    # Opciones de talles como TEXTO
     t_num = ["👉 ELEGIR TALLE","36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
     t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL","5XL"]
     t_cam = ["👉 ELEGIR TALLE","38","40","42","44","46","48","50","52","54","56","58","60"]
@@ -122,39 +124,32 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
         opts = t_num if "PANTALON" in p else (t_cam if "CAMISA" in p else t_let)
         column_config[p] = st.column_config.SelectboxColumn(p, options=["🚫 NO APLICA"] + opts, width="small")
 
-    # 3. Editor de datos
     edited_df = st.data_editor(df_mostrar, column_config=column_config, hide_index=True, use_container_width=True)
 
-    # 4. Guardado Seguro
     if st.button("GUARDAR Y REGISTRAR"):
         try:
-            with st.spinner("Guardando..."):
-                # Trabajamos sobre una copia del global para no perder datos de otras sucursales
+            with st.spinner("Sincronizando con la base de datos..."):
                 df_update = df_global.copy()
                 
-                # Sincronizamos los cambios usando el CUIL como llave maestra
                 for index, row in edited_df.iterrows():
-                    cuil_empleado = row["CUIL"]
+                    cuil_empleado = str(row["CUIL"])
                     for p in prendas:
-                        nuevo_val = row[p]
-                        # Revertimos los emojis a valores de base de datos
-                        if nuevo_val == "👉 ELEGIR TALLE": valor_db = "1"
-                        elif nuevo_val == "🚫 NO APLICA": valor_db = ""
+                        nuevo_val = str(row[p])
+                        if "ELEGIR TALLE" in nuevo_val: valor_db = "1"
+                        elif "NO APLICA" in nuevo_val: valor_db = ""
                         else: valor_db = nuevo_val
                         
-                        # Actualizamos en el DataFrame global buscando por CUIL
                         df_update.loc[df_update["CUIL"] == cuil_empleado, p] = valor_db
 
-                # Subimos todo el DataFrame actualizado
                 conn.update(worksheet="CASTILLO", data=df_update)
 
                 ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 pdf_bytes = generar_pdf(sucursal_sel, ahora, edited_df)
                 
-                st.success("✅ Datos guardados correctamente en la base central.")
+                st.success("✅ ¡Talles guardados con éxito!")
                 st.download_button("DESCARGAR ACUSE PDF", pdf_bytes, f"Acuse_{sucursal_sel}.pdf", "application/pdf")
                 st.balloons()
-        except Exception as e:
+        except Exception:
             st.error("⚠️ **ERROR AL GUARDAR. ESPERA 2M Y REINTENTA. SI PERSISTE CONTACTA A RRHH.**")
 
     st.markdown('</div>', unsafe_allow_html=True)
