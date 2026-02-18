@@ -10,88 +10,36 @@ st.set_page_config(page_title="Gestión de Uniformes", layout="wide")
 # ===================== ESTILOS =====================
 st.markdown("""
 <style>
+html, body, [class*="css"] { font-family: 'Segoe UI', sans-serif; }
+.stApp { background-color: #f4f5f7; }
+.block-container { padding-top: 1rem; padding-bottom: 2rem; }
+section[data-testid="stSidebar"] { background-color: #0f1f3d; width: 270px; }
+section[data-testid="stSidebar"] > div { padding-top: 30px; }
+label { color: white !important; font-weight: 600 !important; }
+.titulo { font-size: 40px; font-weight: 800; color: #0f1f3d; text-align: center; margin-top: 10px; margin-bottom: -10px; }
+.subtitulo { font-size: 32px; font-weight: 700; color: #0f1f3d; text-align: center; margin-bottom: 15px; }
+.card { background-color: white; padding: 35px; border-radius: 18px; box-shadow: 0 8px 25px rgba(0,0,0,0.08); margin-top: 10px; }
 
-/* Fuente general */
-html, body, [class*="css"]  {
-    font-family: 'Segoe UI', sans-serif;
+/* Buscador Gris */
+div[data-testid="stTextInput"] input { 
+    border: 2px solid #bdc3c7 !important; 
+    background-color: #f9f9f9 !important; 
+    border-radius: 8px !important; 
 }
 
-/* Fondo limpio */
-.stApp {
-    background-color: #f4f5f7;
-}
-
-/* Eliminar padding superior molesto */
-.block-container {
-    padding-top: 1rem;
-    padding-bottom: 2rem;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background-color: #0f1f3d;
-    width: 270px;
-}
-
-section[data-testid="stSidebar"] > div {
-    padding-top: 30px;
-}
-
-label {
-    color: white !important;
-    font-weight: 600 !important;
-}
-
-/* Títulos */
-.titulo {
-    font-size: 40px;
-    font-weight: 800;
-    color: #0f1f3d;
-    text-align: center;
-    margin-top: 10px;
-    margin-bottom: -10px;
-}
-
-.subtitulo {
-    font-size: 32px;
-    font-weight: 700;
-    color: #0f1f3d;
-    text-align: center;
-    margin-bottom: 15px;
-}
-
-/* Card blanca */
-.card {
-    background-color: white;
-    padding: 35px;
-    border-radius: 18px;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-    margin-top: 10px;
-}
-
-/* Botones */
-div.stButton > button {
-    background-color: #0f1f3d;
-    color: white;
-    border-radius: 10px;
-    padding: 10px 30px;
-    border: none;
-    font-weight: 600;
-}
-
-div.stButton > button:hover {
-    background-color: #1f2f5a;
-}
-
+div.stButton > button { background-color: #0f1f3d; color: white; border-radius: 10px; padding: 10px 30px; border: none; font-weight: 600; width: 100%;}
+div.stButton > button:hover { background-color: #1f2f5a; }
 </style>
 """, unsafe_allow_html=True)
 
 # ===================== LOGO =====================
-logo = Image.open("logo.png")
-
-with st.sidebar:
-    st.image(logo, use_column_width=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+try:
+    logo = Image.open("logo.png")
+    with st.sidebar:
+        st.image(logo, use_column_width=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+except:
+    pass
 
 # ===================== TITULOS =====================
 st.markdown('<div class="titulo">CARGA DE TALLES</div>', unsafe_allow_html=True)
@@ -103,7 +51,6 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(190, 10, "ACUSE DE RECIBO - CARGA DE TALLES", ln=True, align="C")
-    
     pdf.set_font("Arial", "", 10)
     pdf.ln(5)
     pdf.cell(190, 7, f"Sucursal: {sucursal}", ln=True)
@@ -121,53 +68,43 @@ def generar_pdf(sucursal, fecha, datos_tabla):
     
     pdf.set_font("Arial", "", 7)
     for row in datos_tabla:
-        for i, val in enumerate(row):
+        # Filtrar solo columnas relevantes para el PDF (Nombre + 6 prendas)
+        row_pdf = [row[2], row[3], row[4], row[5], row[6], row[7], row[8]]
+        for val in row_pdf:
             texto = str(val).replace("🚫 ", "").replace("👉 ", "")
-            if texto in ["None", "nan", "1", "1.0"]:
-                texto = ""
-            pdf.cell(widths[i], 7, texto, border=1, align="C")
+            if texto in ["None", "nan", "1", "1.0"]: texto = ""
+            pdf.cell(22 if row_pdf.index(val) > 0 else 60, 7, texto, border=1, align="C")
         pdf.ln()
-    
     return bytes(pdf.output())
 
-# ===================== CONEXIÓN =====================
+# ===================== CONEXIÓN CON CONTROL DE ERRORES RRHH =====================
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(worksheet="CASTILLO", ttl=0)
-df.columns = [str(c).strip() for c in df.columns]
+try:
+    df = conn.read(worksheet="CASTILLO", ttl=0)
+    df.columns = [str(c).strip() for c in df.columns]
+except Exception:
+    st.error("⚠️ **ESPERA 2M, RECARGA LA PAGINA Y VOLVE A INTENTARLO. SI EL ERROR PERSISTE COMUNICARSE CON RRHH**")
+    st.stop()
 
 # ===================== LOGIN =====================
 sucursales = sorted(df["SUCURSAL"].dropna().unique())
-
 with st.sidebar:
     sucursal_sel = st.selectbox("SUCURSAL", sucursales)
     password = st.text_input("CONTRASEÑA", type="password")
 
 if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
-
-    df_sucursal = df[df["SUCURSAL"] == sucursal_sel].copy()
+    mask_sucursal = df["SUCURSAL"] == sucursal_sel
+    df_sucursal = df[mask_sucursal].copy()
     df_sucursal = df_sucursal.sort_values(by="POSICIÓN")
 
-    prendas = [
-        "PANTALON GRAFA",
-        "CHOMBA MANGAS LARGAS",
-        "CAMPERA HOMBRE",
-        "CAMISA HOMBRE",
-        "CAMPERA MUJER",
-        "CAMISA MUJER"
-    ]
+    prendas = ["PANTALON GRAFA", "CHOMBA MANGAS LARGAS", "CAMPERA HOMBRE", "CAMISA HOMBRE", "CAMPERA MUJER", "CAMISA MUJER"]
 
     for prenda in prendas:
-        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace(
-            {"nan": "", "None": "", "0": "", "0.0": ""}
-        )
-
+        df_sucursal[prenda] = df_sucursal[prenda].astype(str).str.strip().replace({"nan": "", "None": "", "0": "", "0.0": ""})
         def transformar(val):
-            if val in ["1", "1.0"]:
-                return "👉 ELEGIR TALLE"
-            if val == "":
-                return "🚫 NO APLICA"
+            if val in ["1", "1.0"]: return "👉 ELEGIR TALLE"
+            if val == "": return "🚫 NO APLICA"
             return val
-
         df_sucursal[prenda] = df_sucursal[prenda].apply(transformar)
 
     df_editor = df_sucursal[["POSICIÓN","CUIL","APELLIDO Y NOMBRE"] + prendas].copy()
@@ -175,13 +112,9 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader(f"Sucursal: {sucursal_sel}")
 
-    # 🔎 Buscador dentro del recuadro
     filtro = st.text_input("", placeholder="🔎 Buscar empleado por nombre")
-
     if filtro:
-        df_editor = df_editor[
-            df_editor["APELLIDO Y NOMBRE"].str.contains(filtro, case=False, na=False)
-        ]
+        df_editor = df_editor[df_editor["APELLIDO Y NOMBRE"].str.contains(filtro, case=False, na=False)]
 
     t_num = ["👉 ELEGIR TALLE","36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
     t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL","5XL"]
@@ -192,50 +125,44 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
         "CUIL": st.column_config.Column("CUIL", width="medium", disabled=True),
         "APELLIDO Y NOMBRE": st.column_config.Column("Empleado", width="large", disabled=True)
     }
-
     for p in prendas:
         opts = t_num if "PANTALON" in p else (t_cam if "CAMISA" in p else t_let)
-        column_config[p] = st.column_config.SelectboxColumn(
-            p,
-            options=["🚫 NO APLICA"] + opts,
-            width="small"
-        )
+        column_config[p] = st.column_config.SelectboxColumn(p, options=["🚫 NO APLICA"] + opts, width="small")
 
-    edited_df = st.data_editor(
-        df_editor,
-        column_config=column_config,
-        hide_index=True,
-        use_container_width=True
-    )
+    edited_df = st.data_editor(df_editor, column_config=column_config, hide_index=True, use_container_width=True)
 
     if st.button("GUARDAR Y REGISTRAR"):
-        for p in prendas:
-            def revertir(val):
-                if val == "👉 ELEGIR TALLE":
-                    return "1"
-                if val == "🚫 NO APLICA":
-                    return ""
-                return val
+        try:
+            # 1. Revertir cambios para CASTILLO (Carga parcial habilitada)
+            for p in prendas:
+                def revertir(val):
+                    if val == "👉 ELEGIR TALLE": return "1"
+                    if val == "🚫 NO APLICA": return ""
+                    return val
+                df.loc[mask_sucursal, p] = edited_df[p].apply(revertir).values
 
-            df.loc[df["SUCURSAL"] == sucursal_sel, p] = edited_df[p].apply(revertir).values
+            conn.update(worksheet="CASTILLO", data=df)
 
-        conn.update(worksheet="CASTILLO", data=df)
+            # 2. Registrar en HISTORIAL_ACUSES
+            ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            try:
+                hist_df = conn.read(worksheet="HISTORIAL_ACUSES", ttl=0)
+            except:
+                hist_df = pd.DataFrame(columns=["FECHA", "SUCURSAL", "ACCION"])
+            
+            nueva_fila = pd.DataFrame([{"FECHA": ahora, "SUCURSAL": sucursal_sel, "ACCION": "Carga de talles realizada"}])
+            hist_df = pd.concat([hist_df, nueva_fila], ignore_index=True)
+            conn.update(worksheet="HISTORIAL_ACUSES", data=hist_df)
 
-        ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        pdf_bytes = generar_pdf(sucursal_sel, ahora, edited_df.values.tolist())
-
-        st.success("Datos guardados correctamente.")
-        st.download_button(
-            "DESCARGAR ACUSE PDF",
-            pdf_bytes,
-            f"Acuse_{sucursal_sel}.pdf",
-            "application/pdf"
-        )
+            # 3. PDF
+            pdf_bytes = generar_pdf(sucursal_sel, ahora, edited_df.values.tolist())
+            st.success("✅ Datos guardados y registrados correctamente.")
+            st.download_button("DESCARGAR ACUSE PDF", pdf_bytes, f"Acuse_{sucursal_sel}.pdf", "application/pdf")
+            st.balloons()
+        except Exception:
+            st.error("⚠️ **ERROR AL GUARDAR: ESPERA 2M, RECARGA LA PAGINA Y VOLVE A INTENTARLO.**")
 
     st.markdown('</div>', unsafe_allow_html=True)
-
 else:
-    if password:
-        st.error("Contraseña incorrecta.")
-    else:
-        st.info("Ingrese la contraseña para continuar.")
+    if password: st.error("Contraseña incorrecta.")
+    else: st.info("Ingrese la contraseña para continuar.")
