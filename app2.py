@@ -112,7 +112,7 @@ if password == f"{sucursal_sel.lower().replace(' ', '')}2026":
 
     # Opciones de talles como TEXTO
     t_num = ["👉 ELEGIR TALLE","36","38","40","42","44","46","48","50","52","54","56","58","60","62"]
-    t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL","5XL"]
+    t_let = ["👉 ELEGIR TALLE","S","M","L","XL","XXL","XXXL","4XL"]
     t_cam = ["👉 ELEGIR TALLE","38","40","42","44","46","48","50","52","54","56","58","60"]
 
     column_config = {
