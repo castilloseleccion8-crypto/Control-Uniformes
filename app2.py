@@ -74,8 +74,8 @@ try:
     df_global.columns = [str(c).strip() for c in df_global.columns]
     # FORZAR TODO A TEXTO PARA EVITAR ERRORES CON NÚMEROS
     df_global = df_global.astype(str)
-except Exception:
-    st.error("⚠️ **ESPERA 2M, RECARGA LA PAGINA Y VOLVE A INTENTARLO. SI EL ERROR PERSISTE COMUNICARSE CON RRHH**")
+except Exception as e:
+    st.error(f"Error técnico: {e}")
     st.stop()
 
 # ===================== LOGIN =====================
